@@ -1,87 +1,39 @@
-# MoviePilot 插件：稳定目录名
+# MoviePilot 插件仓库
 
-整理入库时，如果同一个 TMDB ID 已经有对应的媒体目录，就**复用那个目录名**。
+个人自用的 MoviePilot 插件集合。仓库本身就是标准的插件市场仓库，可以被 MoviePilot 的「在线插件」直接读取安装。
 
-用来解决一个具体问题：**TMDB 的中文译名一变，同一部剧就被拆成两个目录。**
+## 包含的插件
 
----
+| 插件 | 版本 | 说明 | 文档 |
+|---|---|---|---|
+| 稳定目录名 | 1.1.0 | 整理入库时按 TMDB ID 复用既有的媒体目录，避免 TMDB 中文译名变化把同一部剧拆成两个目录 | [说明](plugins.v3/stabledirname/README.md) |
 
-## 问题是什么
-
-MoviePilot 生成目标路径的方式是纯 Jinja2 模板渲染：
-
-```python
-# app/modules/filemanager/transhandler.py
-def get_rename_path(template_string, rename_dict, path=None, ...):
-    template = Template(template_string)
-    render_str = template.render(rename_dict)
-    ...
-    return ensure_path_within_root(path, path / render_str)
-```
-
-它**完全不检查磁盘上是否已经有这部剧的目录**。而默认模板的第一层是：
-
-```
-{{title}} ({{year}}) {tmdb-{{tmdbid}}}/Season {{season}}/...
-```
-
-`{{title}}` 取自 TMDB 的**当前中文译名**。于是：
-
-```
-第 1 周：  正相反的你与我 (2026) {tmdb-278043}/   ← 建了目录
-第 6 周：  相反的你和我 (2026) {tmdb-278043}/     ← TMDB 改名，又建一个
-```
-
-结果磁盘上出现两个目录，Jellyfin 当成两部剧，各自刮削一遍，观看进度也割裂在两处。
-
-加上 `{tmdb-{{tmdbid}}}` 只能固定 ID 那一段，**标题段照漂**。
-
-## 插件做了什么
-
-MoviePilot 在渲染完成后会发一个 `TransferRename` 事件，并提供了改写最终结果的出口：
-
-```python
-event = eventmanager.send_event(ChainEventType.TransferRename, event_data)
-if event and event.event_data:
-    if event_data.updated and event_data.updated_str:
-        render_str = event_data.updated_str      # ← 插件在这里接管
-```
-
-本插件挂在这个事件上，做三件事：
-
-1. 从渲染上下文取出 `tmdbid`
-2. 在目标媒体库里查找名字以 `{tmdb-<id>}` 结尾的**已有目录**
-3. 命中就整个第一层目录名替换成它，同时把文件名里的译名也换成锁定名
-
-效果：
-
-| 场景 | 不加插件 | 加插件 |
-|---|---|---|
-| 首次整理 | `正相反的你与我 (2026) {tmdb-278043}/` | 一样 |
-| TMDB 改名后再整理 | `相反的你和我 (2026) {tmdb-278043}/` ← **拆成两个** | 复用 `正相反的你与我 (2026) {tmdb-278043}/` |
-
-**一个 TMDB ID 永远对应一个目录。名字在首次定名时被锁定，之后 TMDB 怎么改都不影响。**
-
-需要注意的是：这不是"永远使用 Bangumi 的名字"，而是"**使用第一次定下来的那个名字**"。
-
-## 仓库结构
-
-本仓库同时是一个标准的 MoviePilot 插件市场仓库，可以直接被「在线安装」读取：
+## 目录结构
 
 ```
 .
-├── package.v3.json              插件索引（v3 主程序读这个）
+├── package.v3.json                    插件索引（v3 主程序读这个）
 ├── plugins.v3/
-│   └── stabledirname/           目录名必须全小写
-│       └── __init__.py          插件本体
-├── scripts/verify.py            容器内验证脚本
+│   └── stabledirname/                 插件目录，名字必须全小写
+│       ├── __init__.py                插件本体
+│       └── README.md                  插件说明
+├── scripts/
+│   └── verify_stabledirname.py        容器内验证脚本
+├── LICENSE
 └── README.md
 ```
 
-两条约定，来自 MoviePilot 的实际实现：
+## 新增一个插件
 
-- 索引 **key 用驼峰**（`StableDirName`），**目录名用全小写**（`stabledirname`）——`app/runtime/extensions/plugin/catalog.py` 里是 `f"app.plugins.{source_plugin_id.lower()}"`
-- 仓库必须放在 **main 分支**，因为下载地址是硬编码的 `https://raw.githubusercontent.com/{user}/{repo}/main/`
+两条约定来自 MoviePilot 的实际实现，不是风格偏好：
+
+1. **索引 key 用驼峰，目录名用全小写**。官方仓库里索引写 `"MediaDirWatcher"`，目录是 `plugins.v3/mediadirwatcher/`——对应 `app/runtime/extensions/plugin/catalog.py` 里的 `f"app.plugins.{source_plugin_id.lower()}"`
+2. **仓库必须在 main 分支**，因为下载地址是硬编码的 `https://raw.githubusercontent.com/{user}/{repo}/main/`
+
+步骤：
+
+1. 新建 `plugins.v3/<小写名>/__init__.py`，里面放 `_PluginBase` 的子类
+2. 在 `package.v3.json` 里加一个 key（驼峰名），填 `name` / `description` / `labels` / `version` / `author` / `level` / `release` / `system_version` / `history`
 
 索引文件按主程序大版本选：当前是 v3，读 `package.v3.json` + `plugins.v3/`；读不到会依次降级到 `package.v2.json` / `package.json`。
 
@@ -93,9 +45,15 @@ if event and event.event_data:
 docker cp plugins.v3/stabledirname moviepilot-v3-2:/config/plugins/
 ```
 
-然后在 MoviePilot 界面 **设置 → 插件** 里找到「稳定目录名」，启用即可。如果列表里没有出现，`docker restart moviepilot-v3-2` 让 MoviePilot 重新扫描插件目录。
+然后在 MoviePilot 界面 **设置 → 插件** 里启用。列表里没出现就 `docker restart moviepilot-v3-2` 让它重新扫描插件目录。
 
-### 方式二：在线安装（走插件市场）
+注意：如果同一个插件既有手动装的、又有从市场装的，会被加载两次。改用市场安装前先删掉手动装的那份：
+
+```bash
+docker exec moviepilot-v3-2 rm -rf /config/plugins/stabledirname
+```
+
+### 方式二：在线安装
 
 **只支持 GitHub。** MoviePilot 会直接丢弃非 GitHub 的地址——`app/domain/plugin.py` 里写死的：
 
@@ -107,28 +65,24 @@ def normalize_plugin_market_repo_url(repo_url: str) -> str | None:
     return f"https://github.com/{parts[0]}/{parts[1]}"
 ```
 
-所以：
-
 **GitHub 仓库**
 
-1. 把本仓库推到一个 GitHub 仓库（公开即可）
-2. MoviePilot → 设置 → 插件 → 插件市场地址，追加你的仓库地址
+1. 把本仓库推到 GitHub（必须是 `main` 分支）
+2. MoviePilot → 设置 → 插件 → 插件市场地址，追加你的仓库。多个地址用逗号分隔，保留原来的默认地址：
 
    ```
    https://github.com/jxxghp/MoviePilot-Plugins,https://github.com/<你>/<仓库>
    ```
-
-   多个地址用逗号分隔，原来的默认地址保留。
-3. 重启后到「在线插件」里就能搜到「稳定目录名」，一键安装
+3. 重启后到「在线插件」里就能看到本仓库的插件
 
 私有仓库需要额外配置 `REPO_GITHUB_TOKEN`，格式 `{user}/{repo}:ghp_xxxx`。
 
 **Gitea 仓库**
 
-**不能直接配进插件市场地址**（上面那段代码会把 `gitea.example.com` 直接返回 `None` 丢掉）。可行的做法是走本地仓库：
+不能直接配进插件市场地址（上面那段代码会把非 github.com 的地址返回 `None` 丢掉）。可行的做法是走本地仓库：
 
 1. 在宿主机把仓库 clone 到一个目录，例如 `/volume1/docker/mp-plugin-repo`
-2. 挂载进 MoviePilot 容器（compose 里加一行）
+2. 挂载进 MoviePilot 容器
 
    ```yaml
    volumes:
@@ -138,84 +92,6 @@ def normalize_plugin_market_repo_url(repo_url: str) -> str | None:
 4. 重启，插件市场里就会出现
 
 代价是**不会自动更新**——需要你自己（或加个定时任务）在宿主机 `git pull`。
-
-## 配置
-
-| 项 | 说明 |
-|---|---|
-| 启用插件 | 开关 |
-| 媒体库根目录 | **一般留空**。留空时插件使用本次整理的目标目录（即"设置 → 目录"里配置的媒体库路径），这是最准确的做法。只有当自动判断失效时才需要填，且要填到具体某个库，例如 `/video/media/bangumi` |
-| TMDB 译名变化时 | `复用首次译名目录`（默认）或 `把目录改名跟随最新译名`，见下 |
-
-### 两种模式的区别
-
-**复用首次译名目录（默认）**
-
-插件的落点改写为已有目录，路径从此不再变化。
-
-```
-首次整理：      正相反的你与我 (2026) {tmdb-278043}/
-TMDB 改名之后：  正相反的你与我 (2026) {tmdb-278043}/   ← 还是这个
-```
-
-Jellyfin 只会识别一次，观看进度和收藏不受影响。
-
-**把目录改名跟随最新译名**
-
-插件把已有目录重命名成最新译名，目录名始终紧跟 TMDB。
-
-```
-首次整理：      正相反的你与我 (2026) {tmdb-278043}/
-TMDB 改名之后：  相反的你和我 (2026) {tmdb-278043}/     ← 目录被改名
-```
-
-**代价**：目录一改名，路径就变，Jellyfin 会把它当作新条目重新识别，**该剧的观看进度和收藏会丢失**。译名每变一次就丢一次。如果 TMDB 的译名被人反复改来改去，目录名也会跟着反复变。
-
-选这个模式前请确认你确实需要"目录名永远等于最新译名"，而不是只要"不被拆成两个"。
-
-## 验证
-
-启用后，随便整理一集新内容，看 MoviePilot 日志里有没有插件的输出：
-
-```
-[稳定目录名] tmdbid=278043 复用已有目录：相反的你和我 (2026) {tmdb-278043} -> 正相反的你与我 (2026) {tmdb-278043}
-```
-
-update 模式下则是：
-
-```
-[稳定目录名] 目录改名：正相反的你与我 (2026) {tmdb-278043} -> 相反的你和我 (2026) {tmdb-278043}（路径已变化）
-```
-
-没有输出说明本次没有命中（例如该剧还没有历史目录，属于首次整理，属正常）。
-
-仓库里带了一个验证脚本，可以在容器里跑一遍确认逻辑没被改坏：
-
-```bash
-docker cp scripts/verify.py moviepilot-v3-2:/tmp/verify.py
-docker exec moviepilot-v3-2 python3 /tmp/verify.py
-```
-
-它只读取媒体库目录并改写字符串，重命名相关的用例全部在临时目录里进行。
-
-## 已知限制
-
-- **默认模式不会重命名已有目录**。`reuse` 模式只改写"这次要落到哪里"，从不改动磁盘上已存在的目录名。这是有意为之：目录一改名，路径就变，Jellyfin 会当成新条目重新识别、观看进度归零，那就失去了意义。需要改名的话得显式选 `update` 模式，并接受它的代价。
-- **`update` 模式会丢观看进度**。见上文「两种模式的区别」。
-- **同一 TMDB ID 存在多个目录时，插件只能接管其中一个**。这是历史遗留（模板变化导致的分叉），插件会在日志里打 `存在同一 TMDB ID 的多个目录，插件只能接管其中一个，建议先合并` 的警告。需要用独立脚本先合并，插件负责此后不再分叉。
-- **依赖 `rename_dict` 里有 `tmdbid`**。识别必须走 TMDB；如果某次识别没拿到 TMDB ID，插件会跳过，行为退回原生。
-- **依赖目录名格式**。插件的索引靠目录名结尾的 `{tmdb-<id>}` 标记。如果模板不生成这个标记，插件就找不到已有目录。
-- **索引有 60 秒缓存**。新建或改名后最长 60 秒才会被索引到，对"译名漂移"这种以天计的变动没有影响。
-- **MoviePilot 大版本升级可能失效**。插件依赖 `TransferRename` 事件契约；该契约的字段若变化，需要跟着调整。
-
-## 卸载
-
-```bash
-rm -rf /volume1/docker/moviepilot/config/plugins/StableDirName
-docker restart moviepilot-v3-2
-```
-
-插件不改动任何媒体文件，删除后 MoviePilot 立刻回到原生行为。
 
 ## License
 
