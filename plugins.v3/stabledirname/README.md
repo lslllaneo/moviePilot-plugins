@@ -140,7 +140,7 @@ docker exec moviepilot-v3-2 python3 /tmp/verify.py
 ## 卸载
 
 ```bash
-rm -rf /volume1/docker/moviepilot/config/plugins/StableDirName
+docker exec moviepilot-v3-2 rm -rf /config/plugins/stabledirname
 docker restart moviepilot-v3-2
 ```
 
