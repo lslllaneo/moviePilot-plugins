@@ -17,7 +17,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-PLUGIN_FILE = sys.argv[1] if len(sys.argv) > 1 else "/config/plugins/StableDirName/__init__.py"
+PLUGIN_FILE = sys.argv[1] if len(sys.argv) > 1 else "/config/plugins/stabledirname/__init__.py"
 LIBRARY = Path("/video/media/bangumi")
 
 spec = importlib.util.spec_from_file_location("sdn_verify", PLUGIN_FILE)

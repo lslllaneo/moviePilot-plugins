@@ -64,17 +64,80 @@ if event and event.event_data:
 
 需要注意的是：这不是"永远使用 Bangumi 的名字"，而是"**使用第一次定下来的那个名字**"。
 
-## 安装
+## 仓库结构
 
-把插件目录复制进 MoviePilot 的插件目录：
+本仓库同时是一个标准的 MoviePilot 插件市场仓库，可以直接被「在线安装」读取：
 
-```bash
-cp -r plugins/StableDirName /volume1/docker/moviepilot/config/plugins/
+```
+.
+├── package.v3.json              插件索引（v3 主程序读这个）
+├── plugins.v3/
+│   └── stabledirname/           目录名必须全小写
+│       └── __init__.py          插件本体
+├── scripts/verify.py            容器内验证脚本
+└── README.md
 ```
 
-然后在 MoviePilot 界面 **设置 → 插件** 里找到「稳定目录名」，启用即可。
+两条约定，来自 MoviePilot 的实际实现：
 
-如果列表里没有出现，`docker restart moviepilot-v3-2` 让 MoviePilot 重新扫描插件目录。
+- 索引 **key 用驼峰**（`StableDirName`），**目录名用全小写**（`stabledirname`）——`app/runtime/extensions/plugin/catalog.py` 里是 `f"app.plugins.{source_plugin_id.lower()}"`
+- 仓库必须放在 **main 分支**，因为下载地址是硬编码的 `https://raw.githubusercontent.com/{user}/{repo}/main/`
+
+索引文件按主程序大版本选：当前是 v3，读 `package.v3.json` + `plugins.v3/`；读不到会依次降级到 `package.v2.json` / `package.json`。
+
+## 安装
+
+### 方式一：本地安装（最直接）
+
+```bash
+docker cp plugins.v3/stabledirname moviepilot-v3-2:/config/plugins/
+```
+
+然后在 MoviePilot 界面 **设置 → 插件** 里找到「稳定目录名」，启用即可。如果列表里没有出现，`docker restart moviepilot-v3-2` 让 MoviePilot 重新扫描插件目录。
+
+### 方式二：在线安装（走插件市场）
+
+**只支持 GitHub。** MoviePilot 会直接丢弃非 GitHub 的地址——`app/domain/plugin.py` 里写死的：
+
+```python
+def normalize_plugin_market_repo_url(repo_url: str) -> str | None:
+    ...
+    if (parsed_url.hostname or "").lower() != "github.com":
+        return None          # 非 github.com 一律忽略
+    return f"https://github.com/{parts[0]}/{parts[1]}"
+```
+
+所以：
+
+**GitHub 仓库**
+
+1. 把本仓库推到一个 GitHub 仓库（公开即可）
+2. MoviePilot → 设置 → 插件 → 插件市场地址，追加你的仓库地址
+
+   ```
+   https://github.com/jxxghp/MoviePilot-Plugins,https://github.com/<你>/<仓库>
+   ```
+
+   多个地址用逗号分隔，原来的默认地址保留。
+3. 重启后到「在线插件」里就能搜到「稳定目录名」，一键安装
+
+私有仓库需要额外配置 `REPO_GITHUB_TOKEN`，格式 `{user}/{repo}:ghp_xxxx`。
+
+**Gitea 仓库**
+
+**不能直接配进插件市场地址**（上面那段代码会把 `gitea.example.com` 直接返回 `None` 丢掉）。可行的做法是走本地仓库：
+
+1. 在宿主机把仓库 clone 到一个目录，例如 `/volume1/docker/mp-plugin-repo`
+2. 挂载进 MoviePilot 容器（compose 里加一行）
+
+   ```yaml
+   volumes:
+     - /volume1/docker/mp-plugin-repo:/plugin-repo
+   ```
+3. 配置 `PLUGIN_LOCAL_REPO_PATHS=/plugin-repo`
+4. 重启，插件市场里就会出现
+
+代价是**不会自动更新**——需要你自己（或加个定时任务）在宿主机 `git pull`。
 
 ## 配置
 
